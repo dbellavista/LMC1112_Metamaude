@@ -1,0 +1,95 @@
+***
+*** Modello READERS_WRITERS realizzato come insieme di variabili numeriche.
+***
+mod CTMC-READERS_WRITERS is
+
+	pr CTMC-EXTRA .
+	
+	sort NatCouple .
+	op nc : Nat Nat -> NatCouple .
+
+	op print : EntryList -> Overview .
+	op numRW : EntryList -> NatCouple .
+	var N M K J : Nat .
+	var Ov : Overview .
+	var El : EntryList .
+	var T1 T2 T3 : Float .
+	var S1 S2 : State .
+	var NR NW N1 N2 M1 M2 : Nat .
+	var VL VL1 : VarList .
+
+	*** Start
+	crl [model] : < v("start" , N) v("choose" , M) VL > =>
+					[10.0 * float(N)] < v("start" , N + -1) v("choose" , M + 1) VL >
+				if N > 0 .
+	*** Read
+	crl [model] : < v("choose" , N) v("waitr" , M) VL > =>
+					[5.0 * float(N)] < v("choose" , N + -1) v("waitr" , M + 1) VL >
+				if N > 0 .
+	crl [model] : < v("waitr" , N) v("read" , M) v("sem" , 1) VL > =>
+					[20.0 * float(N)] < v("waitr" , N + -1) v("read" , M + 1) v("sem" , 1) VL >
+				if N > 0 .
+	crl [model] : < v("read" , N) v("start" , M) VL > =>
+					[50.0 * float(N)] < v("read" , N + -1) v("start" , M + 1) VL >
+				if N > 0 .
+	*** Write
+	crl [model] : < v("choose" , N) v("waitw" , M) VL > =>
+					[5.0 * float(N)] < v("choose" , N + -1) v("waitw" , M + 1) VL >
+				if N > 0 .
+	crl [model] : < v("waitw" , N) v("write" , M) v("sem" , 1) v("read" , 0) VL > =>
+					[40.0 * float(N)] < v("waitw" , N + -1) v("write" , M + 1) v("sem" , 0) v("read" , 0) VL >
+				if N > 0 .
+	crl [model] : < v("write" , N) v("start" , M) v("sem" , 0) VL > =>
+					[50.0 * float(N)] < v("write" , N + -1) v("start" , M + 1) v("sem" , 1) VL >
+				if N > 0 .
+
+	rl [overwiew] : [El] => print(El) .
+
+	ceq print(T1 : S1 - El - T2 : S2) = [T2 : S2]
+		if 	T3 := T2 - T1 /\ nc(NR,NW) := numRW(T1 : S1 - El - T2 : S2)
+		[ print "In " T3 " sec\n\tFrom " T1 " to " T2 "\n\tNumReads: " NR "\n\tNumWrites: " NW ] .
+
+	ceq numRW(T1 : < v("read" , N1) v("write" , M1) VL > - T2 : < v("read" , N2) v("write" , M2) VL1 > - El) = 
+		nc(N + NR, M + NW) if	N := ( if N2 > N1 then 1 else 0 fi ) /\ M := ( if M2 > M1 then 1 else 0 fi ) /\
+								nc(NR, NW) := numRW(T2 : < v("read" , N2) v("write" , M2) > - El) .
+	eq numRW(El) = nc(0, 0) [ owise ] .
+
+endm
+
+mod CTMC-RW_SIMULATOR is
+	
+	pr CTMC-ENGINE .
+	pr CTMC-READERS_WRITERS .
+	*** Simulate ->	Numero di processi
+	***				Numero di step
+	***				Overview Size (ogni quanto si vuole l'overview)
+	***				Random Index
+	op simulate : Nat Nat Nat Nat -> SimulationResult .
+	op buildState : Nat -> State .
+
+	var N M O R : Nat .
+
+	eq simulate(N, M, O, R) = simulate('CTMC-READERS_WRITERS ,  upTerm(buildState(N)), M, O, R) .
+
+	eq buildState(N) = 	< v("start" , N) v("choose" , 0) v("waitr" , 0) 
+						  v("read" , 0) v("sem" , 1) v("waitw" , 0) v("write" , 0) > .
+
+endm
+
+mod CTMC-RW_VERIFIER is
+
+	pr PCTL .
+	pr CTMC-RW_SIMULATOR .
+	*** Verify -> 	Numero di processi
+	***				Formula da verificare
+	***				Approssimazione
+	***				Confidenza
+	***				Profondità massima
+	***				Random Index
+	op verify : Nat Formula Float Float Nat Nat -> Bool .
+	var A C : Float .
+	var R N D : Nat .
+	var F : Formula .
+	
+	eq verify(N, F, A, C, D, R) = verify('CTMC-READERS_WRITERS , F, upTerm(buildState(N)), A, C, D, R) .
+endm

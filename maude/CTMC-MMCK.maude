@@ -1,0 +1,79 @@
+***
+*** Modello di code con buffer limitato di dimensione k
+*** e c server . La dimensione del buffer e il numero dei
+*** server è specificato rispettivamente con le variabili
+*** v("buffersize" , K) v("nserver" , C).
+*** In uscita sono stampate tutte le coppie (Tempo, NumeroProcessi)
+*** e il numero di processi persi a causa della dimensione limitata
+*** del buffer. Il numero di processi persi è memorizzato nella
+*** variabile v("losts", L)
+***
+mod CTMC-MMCK is
+	
+	pr CTMC-EXTRA .
+
+	op print : EntryList -> Overview .
+
+	var N K L C : Nat .
+	var EL : EntryList .
+	var T F : Float .
+	var VL : VarList .
+	
+	*** Accodamento nel Buffer
+	crl [model] : < v("buffersize" , K) v("buffer", N) VL > => [ 0.535 ] < v("buffersize" , K) v("buffer", N + 1) VL > if N < K .
+	*** Buffer pieno
+	crl [model] : < v("buffersize" , K) v("buffer", N) v("losts", L) VL > => [ 0.535 ] < v("buffersize" , K) v("buffer", N) v("losts", L + 1) VL > if N >= K .
+	*** Svolgimento di task (caso N < C)
+	crl [model] : < v("nserver" , C) v("buffer", N) VL > => [0.120 * float(N)] < v("buffer", N + -1) v("nserver" , C) VL > if N > 0 /\ N < C .
+	*** Svolgimento di task (caso N >= C)
+	crl [model] : < v("nserver" , C) v("buffer", N) VL > => [0.120 * float(C)] < v("buffer", N + -1) v("nserver" , C) VL > if N > 0 /\ N >= C .
+
+	rl [print] : [EL:EntryList] => print(EL) .
+
+	eq print(empty) = [empty] .
+	eq print(T : < v("buffer", N) v("losts", L) VL > - EL) = print(EL) [print "(" T ", "  N "); L = " L ] .
+
+endm
+
+mod CTMC-MMCK_SIMULATOR is
+
+	pr CTMC-MMCK .
+	pr CTMC-ENGINE .
+	
+	*** Simulate ->	Dimensione Buffer
+	***				Numero di Server
+	***				Numero di step
+	***				Overview Size (ogni quanto si vuole l'overview)
+	***				Random Index
+	
+	op simulate : Nat Nat Nat Nat Nat -> SimulationResult .
+	op buildState : Nat Nat -> State .
+
+	var DB NS S O R : Nat .
+
+	eq simulate(DB, NS, S, O, R) = simulate('CTMC-MMCK ,  upTerm(buildState(DB, NS)), S, O, R) .
+
+	eq buildState(DB, NS) = < v("buffersize" , DB) v("nserver" , NS) v("buffer", 0) v("losts", 0) > .
+
+endm
+
+mod CTMC-MMCK_VERIFIER is
+
+	pr PCTL .
+	pr CTMC-MMCK_SIMULATOR .
+	
+	*** Verify -> 	Dimensione Buffer
+	***				Numero di Server
+	***				Formula da verificare
+	***				Approssimazione
+	***				Confidenza
+	***				Profondità massima
+	***				Random Index
+	
+	op verify : Nat Nat Formula Float Float Nat Nat -> Bool .
+	var A C : Float .
+	var DB NS R N D : Nat .
+	var F : Formula .
+	
+	eq verify(DB, NS, F, A, C, D, R) = verify('CTMC-MMCK , F, upTerm(buildState(DB, NS)), A, C, D, R) .
+endm

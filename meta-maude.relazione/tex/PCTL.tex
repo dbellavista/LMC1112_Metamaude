@@ -1,0 +1,413 @@
+\section{Progetto PCTL}
+
+La seconda parte del progetto riguarda l'implementazione di un verificatore di
+proprietà PCTL utilizzando APMC.
+
+\subsection{Strategia risolutiva}
+\label{sec:strategia}
+Il nuovo sistema, il verificatore, segue l'algoritmo descritto
+nella sezione \ref{sec:APMC}. L'appossimazione $\epsilon$, il fattore di
+confidenza $\delta$ e la profondità massima delle path sono forniti dall'utente
+insieme allo stato iniziale, al modello e alla formula da verificare. 
+
+Per la generazione della path casuale, sfrutto il simulatore CTMC
+realizzato nella prima parte del progetto, ma anziché generare interamente una
+path di profondità massima, simulo il sistema un passo alla volta, valutando la
+formula in ogni nuovo stato.
+
+In generale, per risolvere una formula seguo questo procedimento:
+\begin{enumerate}
+  \item Se la formula $f \in \phi$: risolvo la formula per lo
+  stato corrente.
+  \item Se la formula $f \in \psi , f = X \phi$: nello stato successivo
+  verifico $\phi$.
+  \item Se la formula $f \in \psi , f = \phi U \phi'$: se vale $\phi'$, $f$ è
+  vera, altrimenti se vale $\phi$, nello stato successivo verifico $\phi U
+  \phi'$. Se non vale né $\phi$ né $\phi'$, $f$ non è vera.
+  \item Se la formula $f \in \psi , f = \phi U^{\leq\tau} \phi'$: se vale
+  $\phi'$, $f$ è vera, alrimenti se vale $\phi$, nello stato successivo verifico
+  $\phi U^{\leq\tau} \phi$. Se non vale né $\phi$ né $\phi'$, $f$ non è vera. Se
+  arrivo in uno stato in cui il tempo $t > \tau$, la formula $f$ non è vera.
+\end{enumerate}
+
+
+\subsection{Sintassi delle Formule}
+All'interno del modulo \emph{PCTL}, ho definito i sort e i costruttori necessari
+a definire le formule PCTL. Come predicato $p$, utilizzo meta-stato \emph{Term},
+con semantica $p \equiv S$, dove $S$ è il meta-stato corrente, oppure
+$p(State, Condition)$ in grado di definire predicati contenenti stati che
+effettuano un match con lo stato corrente e che devono rispettare certe
+condizioni con sintassi definita dal sort \emph{Condition} \cite{maudemanual}.
+
+\begin{Verbatim}[fontsize=\small]
+*** Formula -> phi ; PathFormula -> psi
+sort Formula PathFormula .
+
+*** Un predicato p è un meta-stato.
+subsort Term < Formula .
+*** p(Term, Condition) effettua un matching di Term con lo stato corrente,
+*** controllando la Condition.
+op p : Term Condition -> Formula [ ctor ] .
+op FALSE : -> Formula [ ctor ] .
+op TRUE : -> Formula [ ctor ] .
+op _ implies _ : Formula Formula -> Formula [ ctor prec 90 ] .
+op _ and _ : Formula Formula -> Formula [ ctor prec 80 ] .
+op _ or _ : Formula Formula -> Formula [ ctor prec 80 ] .
+op not _ : Formula -> Formula [ ctor prec 75 ] .
+op P[_](_) : Float PathFormula -> Formula [ ctor prec 70] .
+
+op (_)U[_](_) : Formula Float Formula -> PathFormula [ ctor prec 92] .
+op (_)U(_) : Formula Formula -> PathFormula [ ctor prec 92] .
+op X_ : Formula -> PathFormula [ ctor ] .
+*** Per risolvere ricorsivamente X phi, creo un altro operatore C phi:
+*** true se phi vale nello stato corrente
+op C_ : Formula -> PathFormula [ ctor ] .
+\end{Verbatim}
+
+Il costruttore \emph{C\_} è un artefatto che ho introdotto per semplificare la
+risoluzione ricorsiva delle \emph{PathFormula} ($\psi$). Il significato
+semantico di $C\phi$ è ``nello stato corrente deve valere $\phi$''.
+L'operatore \emph{P[\_](\_)} rappresenta l'operatore di probabilità e il suo
+significato è : $Prob_{\geq p}(\psi)$.
+
+L'operatore $p(S1, C)$ è verificato se , con stato corrente $S$, esiste un
+matching fra $S1$ e $S$ che rispetti la condizione $C$. Questa procedura è
+facilmente implementabile attraverso la \emph{metaXmatch} imponendo che il
+Context sia vuoto, ovvero che non esistano termini senza matching.
+
+ \begin{Verbatim}[fontsize=\small]
+***
+*** match(M, t1, t2, tc) verifica che esista un matching fra il meta-stato.
+*** t1 e l'intero meta-stato t2, rispettando la condizione tc.
+***   - Module : meta-modulo utente.
+***   - Term : meta-stato da verificare.
+***   - Term : meta-stato corrente.
+***   - Condition : condizione che il meta-stato da verificare deve rispettare.
+op match : Module Term Term Condition -> Bool .
+\end{Verbatim}
+
+\subsection{Verifica di Proprietà}
+
+Per verificare una formula su un modello a partire da un certo stato
+iniziale, si utilizza l'operazione \emph{verify}, specificando il nome del
+modulo utente, il meta-stato iniziale, la formula e tutti i parametri necessari.
+L'operazione \emph{verify} funge da wrapper per una operazione \emph{verify}
+con differenti argomenti, che verifica la formula.
+
+\begin{Verbatim}[fontsize=\small]
+***
+*** Verfica la formula data (entry point)
+***   - Qid : Nome del modulo utente su cui c'è il modello .
+***   - Formula : formula PCTL fa verificare.
+***   - Term : meta-stato iniziale
+***   - Float : approximation.
+***   - Float : Confidence.
+***   - Nat : Max Depth.
+***   - Nat : indice di partenza per la generazione di numeri casuali.
+op verify : Qid Formula Term Float Float Nat Nat -> Bool .
+	
+***
+*** Verfica la formula data
+***   - Module : meta-modulo utente.
+***   - Formula : formula PCTL fa verificare.
+***   - SimulationResult : meta-stato corrente + tempo + deadlock?
+***   - Float : approximation.
+***   - Float : Confidence.
+***   - Nat : Max Depth.
+***   - Nat : indice di partenza per la generazione di numeri casuali.
+op verify : Module Formula SimulationResult Float Float Nat Nat -> Bool .
+\end{Verbatim}
+
+L'operazione verify, verifica le formule $\phi$. Quando compare una formula del
+tipo \emph{P[\_]($\psi$)}, è computato il numero di sample $N$ da
+effettuare e verify richiama l'operazione \emph{approxChecking} che per $N$ volte crea una
+path random verificando la formula $\psi$. Come ulteriore miglioramento delle
+prestazioni, interrompo il model checking se la probabilità incrementale ha già
+raggiunto la probabilità target (le formule sono monotone, dunque la
+probabilità può solo aumentare ulteriormente).
+	
+\begin{Verbatim}[fontsize=\small]
+***
+*** Esegue un model checking approssimato della PathFormula data
+***   - Module : meta-modulo utente. 
+***   - PathFormula : path-formula PCTL fa verificare.
+***   - SimulationResult : Stato corrente + tempo.
+***   - Nat : Numero di campioni corretti.
+***   - Nat : Numero di campioni testati.
+***   - Nat : Numero di campioni massimi.
+***   - Float : Probabilità da raggiungere.
+***   - Float : approximation.
+***   - Float : Confidence.
+***   - Nat : Max Depth.
+***   - Nat : indice di partenza per la generazione di numeri casuali. 
+op approxChecking : Module PathFormula SimulationResult
+                    Nat Nat Nat Float Float Float Nat Nat -> Float  .
+\end{Verbatim}
+
+Per verificare una formula all'interno durante la generazione di una path, ho
+creato una operazione \emph{checkOnRandomPath} che ricorsivamente incrementa di
+un passo la simulazione, verificando di volta in volta $\psi$, seguendo le
+strategie descritte nella sezione \ref{sec:strategia}:
+\begin{description}
+  \item[$\phi_1 U \phi_2$:]nello stato corrente verifico $\phi_2$,
+  se è vera, allora la formula è verificata, altrimenti verifico $\phi_1$. Se
+  $\phi_1$ è false, allora la formula è falsa, altrimenti avanzo la simulazione
+  di un passo con l'operazione \emph{simNcheck}, verificando nello stato
+  successivo la stessa formula $\phi_1 U \phi_2$.
+  \item[$\phi_1 U^{\leq \tau} \phi_2$:] si comporta esattamente come la versione
+  non bounded, ma prima di tutto controllo se $\tau \geq t$, dove $t$ è il tempo
+  nello stato corrente. Se la relazione è falsa, la formula non è verificata.
+  \item[$X \phi$:]avanzo la simulazione di un passo con l'operazione
+  \emph{simNcheck}, verificando nello stato successivo la formula $C \phi$.
+  \item[$C \phi$:]controllo nello stato corrente se $\phi$ è verificata.
+\end{description}
+
+Ovviamente la verifica di $\phi$ avviene richiamando l'operazione \emph{verify}.
+\begin{Verbatim}[fontsize=\small]
+***
+*** Controlla una PathFormula su una path casuale
+***   - Module : meta-modulo utente.
+***   - PathFormula : path-formula PCTL da verificare.
+***   - SimulationResult : Stato corrente + tempo.
+***   - Nat : Profondità corrente.
+***   - Nat : Profondità massima.
+***   - Float : approximation.
+***   - Float : Confidence.
+***   - Nat : indice di partenza per la generazione di numeri casuali.
+op checkOnRandomPath : Module PathFormula SimulationResult
+                             Nat Nat Float Float Nat -> Bool .
+                             
+***
+*** Esegue una simulazione di un passo e controlla la PathFormula
+*** sul nuovo stato.
+***   - Module : meta-modulo utente
+***   - PathFormula : path-formula PCTL da verificare nello
+***                                              stato successivo.
+***   - SimulationResult : Stato corrente + tempo
+***   - Nat : Profondità corrente
+***   - Nat : Profondità massima
+***   - Float : approximation
+***   - Float : Confidence
+***   - Nat : indice di partenza per la generazione di numeri casuali
+op simNcheck : Module PathFormula SimulationResult
+                              Nat Nat Float Float Nat -> Bool .
+
+\end{Verbatim}
+
+\subsection{Confronto con PRISM}
+
+Se con il framework realizzato si può avere una maggiore espressività
+rispetto a PRISM, lo si paga enormemente nelle prestazioni. Di seguito riporto
+dei test che ho effettuato su tre moduli diversi, descritti nella sezione
+\ref{sec:esempio}. PRISM mette a disposizione l'operatore $P=?[ \ldots ]$, che
+ritorna la probabilità anziché un booleano. Per ottenere lo stesso risultato nel
+framework, basta valutare $P[1.0]( \ldots )$ e abilitare le print con il comando
+\begin{Verbatim}
+Maude> set print attribute on .
+\end{Verbatim}
+Al termine della valutazione è stampato il valore di probabilità finale.
+
+\subsubsection{Modello readers-writers}
+
+Il modello readers-writers è descritto nella sezione \ref{sec:rw}. Di seguito
+riporto anche la sua implementazione in PRISM:
+\begin{Verbatim}[fontsize=\small]
+ctmc
+
+// Numero di processi
+const int N = 100;
+
+module RW
+start : [0..N] init N;
+choise : [0..N] init 0;
+waitr : [0..N] init 0;
+waitw : [0..N] init 0;
+sem : [0..N] init 1;
+read : [0..N] init 0;
+write : [0..N] init 0;
+
+[t1] start>0 & choise<N  -> start :
+     (start'=start-1)&(choise'=choise+1);
+[t2] choise>0 & waitr<N & waitw<N -> choise :
+     (choise'=choise-1) & (waitr'=waitr+1);
+[t3] choise>0 & waitr<N & waitw<N -> choise :
+     (choise'=choise-1) & (waitw'=waitw+1);
+[t4] waitr>0 & sem>0 & read<N -> waitr*sem :
+     (waitr'=waitr-1) & (read'=read+1);
+[t5] waitw>0 & sem>0 & read=0 & write<N -> waitw*sem :
+     (waitw'=waitw-1) & (sem'=sem-1) & (write'=write+1);
+[t6] read>0 & start<N -> read :
+     (read'=read-1) & (start'=start+1);
+[t7] write>0 & sem<N & start<N -> write :
+     (write'=write-1) & (start'=start+1) & (sem'=sem+1);
+
+endmodule
+
+// Definizione dei rate
+
+const double r1=10;
+const double r2=5;
+const double r3=5;
+const double r4=20;
+const double r5=40;
+const double r6=50;
+const double r7=50;
+
+module base_rate 
+[t1] true  -> r1 : true;
+[t2] true  -> r2 : true;
+[t3] true  -> r3 : true;
+[t4] true  -> r4 : true;
+[t5] true  -> r5 : true;
+[t6] true  -> r6 : true;
+[t7] true  -> r7 : true;
+endmodule
+\end{Verbatim}
+
+Il test è stato fatto con condizione iniziale 100 processi, 10000 profondità
+massima, $\epsilon = 0.01$ e $\delta = 1.0\cdot10^{-10}$.
+
+\textbf{P=?[true U[0.1] waitw $>$ 0 $\&$ read $>$ 0]} (la probabilità che entro
+0.1 secondi, ci sia un processo in lettura ed uno in attesa di scrivere).
+La formula espressa nel framework è:
+\begin{Verbatim}
+red in CTMC-RW_VERIFIER : verify(100,
+ P[1.0] ( (TRUE) U[0.1] ( 
+    p( upTerm(< v("read", N:Nat) v("waitw", M:Nat) V:VarList >),
+                  upTerm(N:Nat > 0 and M:Nat > 0) = 'true.Bool )))
+   , 0.01, 0.0000000001, 10000, 42793) .
+\end{Verbatim}
+Dove CTMC-RW\_VERIFIER è un wrapper per facilitare la verifica delle operazioni
+di verifica sul modulo CTMC-READER\_WRITER.
+
+\begin{description}
+	\item[PRISM:] tempo: 17.855 secondi . Probabilità: 0.7882288460727687
+	\item[ENGINE:] tempo: 2036.773 secondi . Probabilità: 0.77615413803280076
+\end{description}
+
+La differenza di probabilità è 0.012074708, quindi rientra nei limiti
+dell'approssimazione.
+
+\subsubsection{Modello BSF}
+
+Il modello del test della Bromosulftaleina è descritto nella sezione
+\ref{sec:bsf}. Di seguito riporto anche la sua implementazione in PRISM:
+\begin{Verbatim}[fontsize=\small]
+ctmc
+// Volume Plasma
+const int VP = 1000;
+// Volume Fegato
+const int VF = 800;
+// Colorante iniziale
+const int IC = 500;
+
+module BSF
+Pl : [0..VP] init IC;
+Fe : [0..VF] init 0;
+
+[t1] Pl > 0 & Fe < VF -> Pl / VP :
+      (Pl'=Pl-1) & (Fe'=Fe+1);
+[t2] Fe > 0 & Pl < VP -> Fe / VF :
+     (Pl'=Pl+1) & (Fe'=Fe-1);
+[t3] Fe > 0 -> Fe / VF :
+     (Fe'=Fe-1);
+
+endmodule
+
+//base rates
+
+const double r1=0.454;
+const double r2=0.698;
+const double r3=0.432;
+
+module base_rate 
+[t1] true  -> r1 : true;
+[t2] true  -> r2 : true;
+[t3] true  -> r3 : true;
+endmodule
+\end{Verbatim}
+
+
+Il test è stato fatto con condizione iniziale 800 volume fegato, 1000 volume
+plasma, 500 colorante, 10000 profondità massima , $\epsilon = 0.05$ e
+$\delta = 1.0\cdot10^{-4}$. \textbf{P=?[true U[50000] Fe = 0 $\&$ Pl = 0]}.
+La formula espressa nel framework è:
+\begin{Verbatim}
+red in CTMC-BSF_VERIFIER : verify(1000, 800, 500,
+ P[1.0] ( (TRUE) U[50000.0] ( 
+    upTerm(< v("plasma", 0) v("fegato", 0) V:VarList >)))
+   , 0.05, 0.0001, 10000, 1351) .
+\end{Verbatim}
+Dove CTMC-BSF\_VERIFIER è un wrapper per facilitare la verifica delle operazioni
+di verifica sul modulo CTMC-BSF.
+
+\begin{description}
+	\item[PRISM:] tempo: 6.874 secondi . Probabilità: 0.6431095406360424
+	\item[ENGINE:] tempo: 984.625 secondi . Probabilità: 0.69863705199394244
+\end{description}
+
+La differenza di probabilità è 0.055527511, quindi rientra nei limiti
+dell'approssimazione.
+
+\subsubsection{Modello MMCK}
+
+Il modello del test M/M/C/K è descritto nella sezione
+\ref{sec:mmck}. Di seguito riporto anche la sua implementazione in PRISM:
+\begin{Verbatim}[fontsize=\small]
+ctmc
+// Numero di server (C)
+const int nServ = 5;
+// Dimension del buffer (K)
+const int buffSize = 10;
+
+const int lostSize = 1000;
+
+module MMCK
+Buff : [0..buffSize] init 0;
+Losts : [0..lostSize] init 0;
+
+[t1] Buff < buffSize ->
+     (Buff'=Buff+1);
+[t2] Buff >= buffSize & Losts < lostSize ->
+     (Losts'=Losts+1);
+[t3] Buff > 0 & Buff < nServ -> Buff :
+     (Buff'=Buff-1);
+[t4] Buff >= nServ -> nServ : 
+     (Buff'=Buff-1);
+
+endmodule
+
+//base rates
+
+const double r1=0.535;
+const double r2=0.120;
+
+module base_rate 
+[t1] true  -> r1 : true;
+[t2] true  -> r1 : true;
+[t3] true  -> r2 : true;
+[t4] true  -> r2 : true;
+endmodule
+\end{Verbatim}
+
+Il test è stato fatto con condizione iniziale 10 dimensione buffer, 5 server,
+profondità massima $K = 10000$, $\epsilon = 0.01$ e $\delta = 1.0\cdot10^{-10}$.
+
+\textbf{P=?[true U[70.0] losts $>$ 0]} (la probabilità che il buffer regga
+almeno 50 secondi). La formula espressa nel framework è:
+\begin{Verbatim}
+red in CTMC-MMCK_VERIFIER : verify(10, 5,
+ P[1.0] ( (TRUE) U[70.0] ( 
+    upTerm(< v("losts", 1) V:VarList >)))
+   , 0.01, 0.0000000001, 10000, 12523) .
+\end{Verbatim}
+Dove CTMC-MMCK\_VERIFIER è un wrapper per facilitare la verifica delle
+operazioni di verifica sul modulo CTMC-MMCK.
+
+\begin{description}
+	\item[PRISM:] tempo: 6.689 secondi . Probabilità: 0.41349972595809265
+	\item[ENGINE:] tempo: 1227.478 secondi . Probabilità: 0.40806948016358197
+\end{description}
+
+La differenza di probabilità è  0.005430246, quindi rientra nei limiti
+dell'approssimazione.

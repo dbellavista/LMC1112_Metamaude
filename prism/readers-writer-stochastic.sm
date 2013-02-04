@@ -1,0 +1,48 @@
+ctmc
+const int N = 100;
+
+module RW
+start : [0..N] init N;
+choise : [0..N] init 0;
+waitr : [0..N] init 0;
+waitw : [0..N] init 0;
+sem : [0..N] init 1;
+read : [0..N] init 0;
+write : [0..N] init 0;
+
+[t1] start>0 & choise<N  -> start :
+     (start'=start-1)&(choise'=choise+1);
+[t2] choise>0 & waitr<N & waitw<N -> choise :
+     (choise'=choise-1) & (waitr'=waitr+1);
+[t3] choise>0 & waitr<N & waitw<N -> choise :
+     (choise'=choise-1) & (waitw'=waitw+1);
+[t4] waitr>0 & sem>0 & read<N -> waitr*sem :
+     (waitr'=waitr-1) & (read'=read+1);
+[t5] waitw>0 & sem>0 & read=0 & write<N -> waitw*sem :
+     (waitw'=waitw-1) & (sem'=sem-1) & (write'=write+1);
+[t6] read>0 & start<N -> read :
+     (read'=read-1) & (start'=start+1);
+[t7] write>0 & sem<N & start<N -> write :
+     (write'=write-1) & (start'=start+1) & (sem'=sem+1);
+
+endmodule
+
+// Definizione dei rate
+
+const double r1=10;
+const double r2=5;
+const double r3=5;
+const double r4=20;
+const double r5=40;
+const double r6=50;
+const double r7=50;
+
+module base_rate 
+[t1] true  -> r1 : true;
+[t2] true  -> r2 : true;
+[t3] true  -> r3 : true;
+[t4] true  -> r4 : true;
+[t5] true  -> r5 : true;
+[t6] true  -> r6 : true;
+[t7] true  -> r7 : true;
+endmodule

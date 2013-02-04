@@ -1,0 +1,167 @@
+\section{Il meta-livello di Maude}
+
+La logica di \emph{rewriting} di \emph{Maude} è riflessiva \cite{maudemanual},
+ovvero descritta in termini di se stessa tramite una teoria universale. 
+Rendendo disponibile all'utente l'accesso alla teoria universale di Maude, è
+possibile ragionare ponendosi al meta-livello sia della \emph{``struttura''} dei
+moduli e termini \emph{Maude}, sia delle strategie risolutive dei procedimenti
+di inferenza, riduzioni, matching e ricerche.
+
+La \emph{riflessione} della logica di rewriting può essere descritta attraverso
+la relazione :
+
+\[
+	\mathcal{R} \vdash t \to t' \Leftrightarrow \mathcal{U} \vdash \langle
+	\bar{\mathcal{R}}, \bar{t} \rangle \to \langle \bar{\mathcal{R}'},	\bar{t'}
+	\rangle
+\]
+
+Dove $\mathcal{R}$ è una teoria di \emph{rewrite},  $\mathcal{U}$ è la teoria
+di rewrite universale, in grado di rappresentare qualunque teoria di rewrite
+finita in termini di se stessa. Il simbolo $\to$ indica che il termine a
+sinistra può essere riscritto come il termine di destra; $t, t'$ sono termini,
+$\langle \bar{\mathcal{R}}, \bar{t} \rangle$ è un termine che rappresenta
+secondo la teoria $\mathcal{U}$ la coppia $(\mathcal{R}, t)$.
+
+La teoria $\mathcal{U}$ è universale e può essere espressa anche in termini di
+se stessa. Dunque la relazione precedente crea una ``reflective tower'' nella
+quale è possibile muoversi sia alto che in basso. Il livello più basso nella
+torre è chiamato forma canonica.
+
+La teoria universale di rewrite $\mathcal{U}$ è implementata in
+Maude nel modulo \texttt{META-LEVEL}, il quale, oltre a contenere operazioni
+per muoversi lungo la reflective tower, contiene sort per descrivere al
+meta-livello moduli e termini.
+
+La maggior parte delle operazioni del meta-livello di Maude
+sono parziali, poiché possono esistere argomenti del Sort corretto che tuttavia
+non sono una corretta meta-rappresentazione o non esiste una valido risultato.
+
+\subsection{Accesso dinamico a moduli e termini}
+
+Termini e moduli Maude possono essere rappresentati come altri termini Maude,
+sruttando la teoria di rewriting universale, permettendo di caricare moduli
+dinamicamente, lavorare e costruire termini di Sort anche sconosciuti ed
+eseguire su tali meta-moduli e meta-termini delle operazioni di reduce e rewrite.
+
+\subsubsection{upTerm e downTerm}
+
+Dato un qualunque termine Maude, è possibile salire e scendere la
+\emph{reflectio tower} utilizzando le operazioni \emph{upTerm} e
+\emph{downTerm}:
+\begin{Verbatim}[fontsize=\small]
+op upTerm : Universal -> Term [poly (1) special (...)] .
+op downTerm : Term Universal -> Universal [poly (2 0) special (...)] .
+\end{Verbatim}
+\emph{upTerm} prende in ingresso un qualunque termine $t$ e restituisce sempre
+la sua meta-rappresentazione $\bar{t}$ di sort \emph{Term}. \emph{downTerm}
+prende in ingresso $\bar{t}$, meta-rappresentazione di un termine $t$, ed un secondo argomento di
+un certo kind. Se $t$ è dello stesso kind del secondo argomento, la
+\emph{downTerm} restituisce $t$, altrimenti restituisce il secondo argomento.
+\begin{Verbatim}[fontsize=\small]
+Maude> red in META-LEVEL : upTerm ( 'a ) .
+result Constant: ''a.Sort
+
+Maude> red in META-LEVEL : upTerm( 'a 'b ) .
+result GroundTerm: '__[''a.Sort,''b.Sort]
+
+Maude> red in META-LEVEL : downTerm ( ''a.Sort , ('prova).Qid ) .
+result Sort: 'a
+
+Maude> red in META-LEVEL : downTerm ( ''a.Sort , ("Fail").String ) .
+result String: "Fail"
+\end{Verbatim}
+
+\subsubsection{upModule}
+\label{sec:upMod}
+I comandi \emph{mod} e \emph{fmod} permettono di definire moduli che Maude
+caricherà nel proprio database interno. Quando si eseguono istruzioni come
+\begin{Verbatim}[fontsize=\small]
+Maude> reduce in MIO-MODULO : prova( 1 , 2 , 3 ) .
+\end{Verbatim}
+Maude accede al database, cerca il modulo \emph{MIO-MODULO} ed effettua la
+\emph{reduce} dell'espressione \emph{prova(1,2,3)}: l'accesso al database è
+statico.
+
+Il meta-livello di Maude permette di ottenere la meta-rappresentazione di un
+modulo precaricato nel database, partendo dal suo nome espresso con un quoted
+identifier, tramite l'operazione:
+\begin{Verbatim}[fontsize=\small]
+op upModule : Qid Bool ~> Module [special (...)] .
+\end{Verbatim}
+Il primo argomento è il nome del modulo, il secondo argomento è true se si
+desidera ottenere anche la meta-rappresentazione di tutte le operazioni
+derivate dai moduli importati, false altrimenti. Il valore di ritorno Module è
+un particolare sort che meta-rappresenta un modulo Maude; ha una struttura
+definita, con un ordine preciso, dunque è semplice da analizzare ed alterare, ma
+non è possibile caricare un meta-modulo nel database di Maude.
+
+\subsubsection{metaRewrite e metaApply}
+\label{sec:mapply}
+Dato un oggetto di tipo Module è possibile eseguire dinamicamente operazioni
+di reduce, rewrite e apply (applicazione di una rule data una regola) partendo
+dalla meta-rappresentazione del termine da ridurre o riscrivere. L'operazione
+\emph{metaRewrite} permette di eseguire su un meta-modulo \emph{Module} la
+rewrite di un meta-termine \emph{Term} fino ad un numero di volte specificato da
+\emph{Bound}.
+\begin{Verbatim}[fontsize=\small]
+sort Bound .
+subsort Nat < Bound .
+op unbounded :-> Bound [ctor] .
+op metaRewrite : Module Term Bound ~> ResultPair [special (...)] .
+\end{Verbatim}
+La metaRewrite ritorna valore di sort ResultPair:
+\begin{Verbatim}[fontsize=\small]
+sort ResultPair .
+op {_,_} : Term Type -> ResultPair [ctor] .
+
+op getTerm : ResultPair -> Term .
+op getType : ResultPair -> Type .
+\end{Verbatim}
+contenente la meta-rappresentazione del risultato e la meta-rappresentazione del
+suo kind o sort. La funzione \emph{metaRewrite} è parziale, quindi se Module o
+Term sono sintatticamente corretti, ma non sono corrette meta-rappresentazioni,
+è restituito un risultato indefinito di kind [ResultPair] .
+
+L'operazione \emph{metaApply} (e la sua generalizzazione \emph{metaXapply})
+permettono di applicare una rule basandosi sulla label ed ottenere un risultato dettagliato sulla
+riscrittura. La chiamata di $metaXapply(\bar{\mathcal{R}}, \bar{t}, \bar{l},
+\sigma, n, b, m)$ riduce $t$ con le equazioni di $\mathcal{R}$, dopodiché crea
+una sequenza di soluzioni applicando tutte le rule chiamate $l$ al termine $t$ e
+scarta i primi $n$ risultati. $b$ e $m$ specificano il livello di nesting al
+quale applicare la riscrittura (per una riscrittura non limitata: 0 -
+$unbounded$).
+\begin{Verbatim}[fontsize=\small]
+sorts Result4Tuple Result4Tuple? .
+subsort Result4Tuple < Result4Tuple? .
+op {_,_,_,_} : Term Type Substitution Context -> Result4Tuple [ctor] .
+op failure : -> Result4Tuple? [ctor] .
+
+op metaXapply : Module Term Qid Substitution Nat Bound Nat ~>
+                                                      Result4Tuple? .
+\end{Verbatim}
+Se l'operazione è andata a buon fine, il risultato \emph{Result4Tuple} contiene:
+\begin{description}
+  \item[Term:]meta-termine riscritto.
+  \item[Type:]meta-tipo del termine riscritto.
+  \item[Substitution:]dettagli sulla sostituzione effettuata dalla apply.
+  \item[Context:]contesto nel quale è avvenuta la riscrittura. Contiene una
+  lista di meta-termini non riscritti e un singolo ``hole'' dove è avvenuta la
+  riscrittura.
+\end{description}
+
+\subsubsection{metaMatch}
+Un'altra potente applicazione del meta-livello di Maude è la metaMatch (e la
+sua generalizzazione metaXmatch), che permette di eseguire un match fra due
+meta-termini all'interno di un meta-modulo permettendo di specificare condizioni
+booleane e di enumerare le soluzioni.
+\begin{Verbatim}[fontsize=\small]
+sorts MatchPair MatchPair? .
+subsort MatchPair < MatchPair? .
+op {_,_} : Substitution Context -> MatchPair [ctor] .
+op noMatch : -> MatchPair? [ctor] .
+op metaXmatch : Module Term Term Condition Nat Bound Nat ~>
+                                             MatchPair? [special (...)] .
+\end{Verbatim}
+Il risultato \emph{MatchPair} contiene le sostituzioni effettuate e il contesto
+nel quale è avvenuta la sostituzione.

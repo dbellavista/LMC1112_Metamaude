@@ -1,0 +1,30 @@
+ctmc
+// Numero di server (C)
+const int nServ = 5;
+// Dimension del buffer (K)
+const int buffSize = 10;
+
+const int lostSize = 1000;
+
+module MMCK
+Buff : [0..buffSize] init 0;
+Losts : [0..lostSize] init 0;
+
+[t1] Buff < buffSize -> 1.0 : (Buff'=Buff+1);
+[t2] Buff >= buffSize & Losts < lostSize -> 1.0 : (Losts'=Losts+1);
+[t3] Buff > 0 & Buff < nServ -> Buff : (Buff'=Buff-1);
+[t4] Buff >= nServ -> nServ : (Buff'=Buff-1);
+
+endmodule
+
+//base rates
+
+const double r1=0.535;
+const double r2=0.120;
+
+module base_rate 
+[t1] true  -> r1 : true;
+[t2] true  -> r1 : true;
+[t3] true  -> r2 : true;
+[t4] true  -> r2 : true;
+endmodule

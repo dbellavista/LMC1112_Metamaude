@@ -1,0 +1,65 @@
+\section{Approximate Probabilistic Model Checking}
+\label{sec:APMC}
+La PCTL (\emph{Probabilistic Computation Tree Logic}), permette di esprimere
+proprietà che si avverano con una probabilità $\rho \in J$ su di un particolare
+modello:
+ \[
+\phi ::= p | FALSE | \phi \rightarrow \phi' | P_J[\psi]
+\]
+\[
+\psi ::= X \phi | \phi U \phi' | \phi U^I \phi'
+\]
+
+Dato un modello CTMC, la verifica di proprietà PCTL è un poblema
+computazionalmente difficile a causa dell'esplosione degli stati da
+verificare. Una prima semplificazione si può ottenere considerando solo
+formule \emph{monotone}, in grado di ridurre lo spazio degli stati per
+particolari proprietà. Una formula $\psi$ è monotona se e solo se \[\exists j
+\in \mathbb{N}, \forall \pi{}[j..], \pi{}[j..]\models \phi \wedge \forall i \in
+\mathbb{N}, i > j , \pi{}[i..]\models \phi \] 
+Ovvero, una formula è monotona se la validità su di uno stato implica la
+validità su tutte le path che partono da esso. Grazie a questa proprietà, la
+verifica di $Prob_{\geq P}[ \psi ]$ può essere limitata alla verifica
+$Prob_{\geq P}[ \psi ]_k$, ovvero limitata a path con profondità pari a $k$,
+poiché la probabilità che la formula $\psi$ sia vera, può solo aumentare.
+Formule composte unicamente da $FALSE$, proposizioni $p$, implicazioni $\phi
+\rightarrow \phi{}'$ e operatori $X \phi$, $\phi U \phi{}'$ comprese le versioni bounded, sono formule monotone. Una grammatica per le formule monotone è la seguente:
+ \[
+\phi ::= p | FALSE | \phi \rightarrow \phi' | P_{\geq \rho}[\psi]
+\]
+\[
+\psi ::= X \phi | \phi U \phi' | \phi U^I \phi'
+\]
+
+Le formule monotone non risolvono il problema della difficoltà
+computazionale, ma rendono possibile applicare un procedimento approssimato,
+ottenendo risultati appartenenti ad un intorno del vero risultato con una certa confidenza.
+
+Il calcolo della probabilità si può approssimare con la tecnica di \emph{fully
+polynomial randomized approximation scheme (FPRAS)} \cite{DBLP:conf/vmcai/2004}.
+Un FPRAS è un algoritmo $A(x, \epsilon, \delta, k), \epsilon \in [0, 1], \delta
+\in [0, 1]$ il quale, dato in input lo stato iniziale del sistema, una approssimazione, un parametro di confidenza e la lunghezza delle path
+ritorna un valore di probabilità tale che:
+\[
+	Prob[ \mid A(x,\epsilon,\delta, k) - \mu(x) \mid \leq \epsilon] \geq 1 - \delta
+\]
+dove $\mu(x)$ è il risultato esatto della formula analizzata.
+
+Una implementazione di $A$ è la seguente \cite{HLMP04}:
+
+\vspace{0.3cm}
+\fbox{%
+        \parbox{0.7\linewidth}{%
+A($x, \epsilon, \delta$) :\newline
+$N := \log{\frac{2}{\delta}}/2\epsilon^2$\newline
+$A := 0$\newline
+for $i \in [1 ; N]$ do\newline
+ 1. Genera una path casuale $\pi$, di lunghezza $k$.\newline
+ 2. Se la formula $\phi$ da valutare è vera, $A := A + 1$.\newline 
+$Return A/N$
+      }%
+}
+\vspace{0.3cm}
+
+L'algoritmo ha complessità polinomiale in $\frac{1}{\epsilon}$ e
+$\log{\frac{1}{\delta}}$.

@@ -1,0 +1,36 @@
+% LaTeX file for a 1 page document
+\documentclass[10pt]{article}
+\usepackage{fancyvrb}
+\usepackage{graphicx}
+
+\usepackage[italian]{babel}
+\usepackage{mathtools}
+\usepackage{multirow}
+\usepackage[utf8]{inputenc}
+
+% Pdf utilities
+\usepackage[pdftex,bookmarks,colorlinks,%
+pdfauthor={Daniele Bellavista},%
+pdftitle={Manuale de Framework per la simulazione e la valutazione di modelli
+CTMC utilizzando Maude e Approximate Probabilistic Model Checking},%
+pdftex]{hyperref}
+\hypersetup{colorlinks=false}
+
+\title{Manuale del Framework per la simulazione e la valutazione di modelli CTMC
+utilizzando Maude e Approximate Probabilistic Model Checking}
+
+\author{Bellavista Daniele}
+
+\begin{document}
+\maketitle
+
+In questo documento è riportata la documentazione per realizzare modelli CTMC,
+simularli e verificarne delle proprietà.
+
+\input{howto.tex}
+%\input{modelli.tex}
+
+\bibliographystyle{plain}
+\bibliography{bib/bib}
+
+\end{document}

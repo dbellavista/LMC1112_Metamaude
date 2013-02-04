@@ -1,0 +1,66 @@
+mod CTMC-PETRI_CONCURRENT is
+	pr CTMC .
+	
+	sort PetriState Token .
+	subsort String < Token < PetriState .
+	
+	op nil : -> PetriState [ ctor ] .
+	op __ : PetriState PetriState -> PetriState [ ctor comm assoc id: nil ] .
+	
+	op notC : PetriState -> Bool .
+	eq notC("c" P:PetriState) = false .
+	eq notC(P:PetriState) = true [ owise ] .
+	
+	op notP : PetriState -> Bool .
+	eq notP("p" P:PetriState) = false .
+	eq notP(P:PetriState) = true [ owise ] .
+		
+	rl [model] : < "p" P:PetriState > => [ 10.0 ] < "n" P:PetriState > .
+	crl [model] : < "n" P:PetriState > => [ 24.0 ] < "c" P:PetriState >
+	        if  notC(P:PetriState) .
+	rl [model] : < "c" P:PetriState > => [ 14.2 ] < "p" P:PetriState > .
+
+	var EL : EntryList .
+	var T1 T2 : Float .
+	var S : State .
+	var N N1 N2 : Nat .
+	var P1 P2 P3 : PetriState .
+	
+	op print : EntryList -> EntryList .
+	op countAccess : EntryList -> Nat .
+	
+	*** Riscrivo l'overview come il risultato dell'operazione print
+	rl [overview] : [EL] => [ print(EL) ] .
+	
+	eq print(empty) = empty .
+	ceq print(EL - T1 : S) = T1 : S
+	  if   N := countAccess(EL - T1 : S) [ print "Numero accessi = " N ] .
+	
+	
+	eq countAccess(empty) = 0 .
+	ceq countAccess(T1 : < P1 > - T2 : < "c" P2 >  - EL) =
+	                1 + countAccess(EL) if notC(P1) .
+	eq countAccess(T1 : < P1 > - EL) = countAccess(EL) [ owise ] .
+
+endm
+
+mod CTMC-PC_SIMULATOR is
+  pr CTMC-PETRI_CONCURRENT .
+  pr CTMC-ENGINE .
+  
+  op simulate : Nat Nat Nat -> SimulationResult .
+  eq simulate(S:Nat, O:Nat, R:Nat) =
+     simulate('CTMC-PETRI_CONCURRENT , upTerm( < "p" "p" "p" "p" > ), S:Nat,
+              O:Nat, R:Nat ) .  
+endm
+
+mod CTMC-PC_VERIFIER is
+  pr CTMC-PETRI_CONCURRENT .
+  pr PCTL .
+  
+  op verify : Formula Float Float Nat Nat -> Bool .
+  eq verify(F:Formula, app:Float, conf:Float, dep:Nat, R:Nat) =
+     verify('CTMC-PETRI_CONCURRENT , F:Formula , upTerm( < "p" "p" "p" "p" > ),    		  
+        app:Float, conf:Float, dep:Nat, R:Nat ) .  
+endm
+

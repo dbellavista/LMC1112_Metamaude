@@ -1,0 +1,229 @@
+mod PCTL is
+	
+	pr CTMC .
+	pr META-LEVEL .
+	pr CTMC-ENGINE .
+	
+	*** Formula -> phi ; PathFormula -> psi
+	sort Formula PathFormula .
+	subsort Term < Formula .	
+	*** Un predicato p è un meta-stato.
+	*** p(Term, Condition) effettua un matching di Term con lo stato corrente,
+	*** controllando la Condition.
+	op p : Term Condition -> Formula [ ctor ] .
+	op FALSE : -> Formula [ ctor ] .
+	op TRUE : -> Formula [ ctor ] .
+	op _ implies _ : Formula Formula -> Formula [ ctor prec 90 ] .
+	op _ and _ : Formula Formula -> Formula [ ctor prec 80 ] .
+	op _ or _ : Formula Formula -> Formula [ ctor prec 80 ] .
+	op not _ : Formula -> Formula [ ctor prec 75 ] .
+	op P[_](_) : Float PathFormula -> Formula [ ctor prec 70] .
+	
+	op (_)U[_](_) : Formula Float Formula -> PathFormula [ ctor prec 92] .
+	op (_)U(_) : Formula Formula -> PathFormula [ ctor prec 92] .
+	op X_ : Formula -> PathFormula [ ctor ] .
+	*** Sarebbe: true se nello stato corrente vale phi. È un artefizio per 
+	*** risolvere ricorsivamente X phi
+	op C_ : Formula -> PathFormula [ ctor ] .
+	
+	***
+	*** Verfica la formula data (entry point)
+	*** 	- Qid 	: Nome del modulo utente su cui c'è il modello .
+	***		- Formula : formula PCTL fa verificare
+	***		- Term : meta-Stato iniziale
+	***		- Float : approximation
+	***		- Float : Confidence
+	***		- Nat	: Max Depth
+	***		- Nat 	: indice di partenza per la generazione di numeri casuali
+	op verify : Qid Formula Term Float Float Nat Nat -> Bool .
+		
+	***
+	*** Verfica la formula data
+	*** 	- Module : meta-modulo utente
+	***		- Formula : formula PCTL fa verificare
+	***		- SimulationResult : meta-stato corrente + tempo + deadlock?
+	***		- Float : approximation
+	***		- Float : Confidence
+	***		- Nat	: Max Depth 
+	***		- Nat 	: indice di partenza per la generazione di numeri casuali
+	op verify : Module Formula SimulationResult Float Float Nat Nat -> Bool .
+
+	***
+	*** match(M, t1, t2, tc) verifica che esista un matching fra il meta-stato
+	*** t1 e l'intero meta-stato t2, rispettando la condizione tc.
+	***		- Module : meta-modulo utente
+	***		- Term : meta-stato da verificare
+	***		- Term : meta-stato corrente
+	***		- Condition : condizione che il meta-stato da verificare deve rispettare
+	op match : Module Term Term Condition -> Bool .
+
+	***
+	*** match(M, t1, t2, tc) verifica che esista un matching fra il meta-stato
+	*** t1 e l'intero meta-stato t2, rispettando la condizione tc.
+	***		- Module : meta-modulo utente
+	***		- Term : meta-stato da verificare
+	***		- Term : meta-stato corrente
+	***		- Term : meta-booleano che il meta-stato da verificare deve rispettare
+	op match : Module Term Term Term -> Bool .
+	
+	***
+	*** Esegue un model checking approssimato della PathFormula data
+	***		- Module : meta-modulo utente	
+	***		- PathFormula : path-formula PCTL fa verificare
+	***		- SimulationResult : meta-stato corrente + tempo + deadlock?
+	***		- Nat : Numero di campioni corretti
+	***		- Nat : Numero di campioni testati 
+	***		- Nat : Numero di campioni massimi
+	***		- Float : Probabilità da raggiungere
+	***		- Float : approximation
+	***		- Float : Confidence
+	***		- Nat	: Max Depth
+	***		- Nat 	: indice di partenza per la generazione di numeri casuali 
+	op approxChecking : Module PathFormula SimulationResult Nat Nat Nat Float Float Float Nat Nat -> Float  .
+	
+	***
+	*** Controlla una PathFormula su una path casuale
+	***		- Module : meta-modulo utente
+	***		- PathFormula : path-formula PCTL da verificare
+	***		- SimulationResult : meta-stato corrente + tempo + deadlock?
+	***		- Nat : Profondità corrente
+	***		- Nat : Profondità massima
+	***		- Float : approximation
+	***		- Float : Confidence
+	***		- Nat : indice di partenza per la generazione di numeri casuali
+	op checkOnRandomPath : Module PathFormula SimulationResult Nat Nat Float Float Nat -> Bool .
+	
+	***
+	*** Esegue una simulazione di un passo e controlla la PathFormula
+	*** sul nuovo stato.
+	***		- Module : meta-modulo utente
+	***		- PathFormula : path-formula PCTL da verificare nello stato successivo.
+	***		- SimulationResult : meta-stato corrente + tempo + deadlock?
+	***		- Nat : Profondità corrente
+	***		- Nat : Profondità massima
+	***		- Float : approximation
+	***		- Float : Confidence
+	***		- Nat : indice di partenza per la generazione di numeri casuali
+	op simNcheck : Module PathFormula SimulationResult Nat Nat Float Float Nat -> Bool .
+	
+	op printDebug : Nat Nat Float -> Bool .
+
+	var ModuleName : Qid .
+	var Mod : Module .
+	var Approx Conf Prob TI TF T ApproxProb Tau : Float .
+	var MaxDepth Depth NSamples NHitted Step RandIdx N N1 N2 : Nat .
+	var SI SF S1 S2 S3 S : Term .
+	var F F1 F2 : Formula .
+	var PathF NewPathF : PathFormula .
+	var B1 B2 BCond hitted F1True F2True deadlock : Bool .
+	var StateTermF CurrentStateTerm : Term .
+	var SR : SimulationResult .
+	var Cond : Condition .
+
+	*** Entry-point
+	eq verify(ModuleName, F, S, Approx, Conf, MaxDepth, RandIdx) =
+			verify(upModule(ModuleName, false), F, sim(0.0, S, false), Approx, Conf, MaxDepth, RandIdx) .
+	*** FALSE
+	eq verify(Mod, FALSE, SR, Approx, Conf, MaxDepth, RandIdx) = false .
+	*** TRUE
+	eq verify(Mod, TRUE, SR, Approx, Conf, MaxDepth, RandIdx) = true .
+	*** phi implies phi'
+	eq verify(Mod, F1 implies F2, SR, Approx, Conf, MaxDepth, RandIdx) = 
+			verify(Mod, F1, SR, Approx, Conf, MaxDepth, RandIdx) implies verify(Mod, F2, SR, Approx, Conf, MaxDepth, RandIdx) .
+	*** phi and phi'
+	eq verify(Mod, F1 and F2, SR, Approx, Conf, MaxDepth, RandIdx) = 
+			verify(Mod, F1, SR, Approx, Conf, MaxDepth, RandIdx) and verify(Mod, F2, SR, Approx, Conf, MaxDepth, RandIdx) .
+	*** phi or phi'
+	eq verify(Mod, F1 or F2, SR, Approx, Conf, MaxDepth, RandIdx) = 
+			verify(Mod, F1, SR, Approx, Conf, MaxDepth, RandIdx) or verify(Mod, F2, SR, Approx, Conf, MaxDepth, RandIdx) .
+	*** not phi
+	eq verify(Mod, not F1, SR, Approx, Conf, MaxDepth, RandIdx) = 
+			not(verify(Mod, F1, SR, Approx, Conf, MaxDepth, RandIdx)) .
+	*** state
+	eq verify(Mod, SF, sim(T, S, deadlock), Approx, Conf,MaxDepth, RandIdx) = match(Mod, SF, S, 'true.Bool = 'true.Bool ) .
+	
+	*** p (state, condition)
+	eq verify(Mod, p(SF, Cond), sim(T, S, deadlock), Approx, Conf, MaxDepth, RandIdx) = match(Mod, SF, S, Cond) .
+
+	*** Match with condition ok => true
+	ceq match(Mod, StateTermF, CurrentStateTerm , Cond) = true
+			if {Sub:Substitution , []} :=
+					metaXmatch(Mod, StateTermF, CurrentStateTerm, Cond, 0, unbounded, 0) .
+	*** Altrimenti => false
+	eq match(Mod, ST1:Term, ST2:Term, Cond) = false [ owise ] . 
+
+	*** P[ >= Prob ] ( psi )
+	ceq verify(Mod, P[Prob](PathF), SR, Approx, Conf, MaxDepth, RandIdx) = ApproxProb >= Prob
+				*** Calcolo il numero di prove da effettuare
+			if 	*** NSamples := ceiling(rat(4.0 / Approx / Approx * log(2.0 / Conf))) /\
+				NSamples := ceiling(rat(log(2.0 / Conf) / ( 2.0 * Approx * Approx ) )) /\
+				*** Eseguo ricorsivamente le prove
+				ApproxProb := approxChecking(Mod, PathF, SR, 0, 0, NSamples, Prob, Approx, Conf, MaxDepth, RandIdx) .
+
+	*** model checking terminato: raggiunti il numero totale di passi
+	ceq approxChecking(Mod, PathF, SR, NHitted, NSamples, NSamples, Prob, Approx, Conf, MaxDepth, RandIdx) =
+				float(NHitted) / float(NSamples)
+			if	ApproxProb := float(NHitted) / float(NSamples) [ print "Probability: " ApproxProb " (target: " Prob " ) NHitted: " NHitted " / " NSamples ] .
+	*** model checking.
+	ceq approxChecking(Mod, PathF, SR, NHitted, Step, NSamples, Prob, Approx, Conf, MaxDepth, RandIdx) = 
+			*** Se psi testata su una path casuale è vera incremento gli "hit", altrimenti no.
+			if checkOnRandomPath(Mod, PathF, SR, 0, MaxDepth, Approx, Conf, RandIdx)  then
+				if float(NHitted + 1) / float(NSamples) >= Prob then		
+					approxChecking(Mod, PathF, SR, NHitted + 1, NSamples, NSamples, Prob, Approx, Conf, MaxDepth, RandIdx) 
+				else
+					approxChecking(Mod, PathF, SR, NHitted + 1, Step + 1, NSamples, Prob, Approx, Conf, MaxDepth, RandIdx + 1)
+				fi 
+			else
+				approxChecking(Mod, PathF, SR, NHitted, Step + 1, NSamples, Prob, Approx, Conf, MaxDepth, RandIdx + 1)
+			fi
+		if printDebug(Step, NSamples, float(NHitted) / float(NSamples)) . 
+	
+	*** Print di debug
+	ceq printDebug(Step, NSamples, Prob) = true if Step rem (NSamples quo 30) == 0 [ print "\tAPMC step " Step "/" NSamples "; probability: " Prob ] .
+	eq printDebug(Step, NSamples, Prob) = true [ owise ] . 
+	
+	*** path terminata: ho raggiunto la profondità massima senza far avverare la condizione
+	eq checkOnRandomPath(Mod, PathF, SR, MaxDepth, MaxDepth, Approx, Conf, RandIdx) = false .
+	*** Until Bounded : bound superato
+	ceq checkOnRandomPath(Mod, (F1)U[Tau](F2), sim(T, S, deadlock), Step, MaxDepth, Approx, Conf, RandIdx) =
+				false if T > Tau .
+	*** Until Bounded
+	eq checkOnRandomPath(Mod, (F1)U[Tau](F2), sim(T, S, deadlock), Step, MaxDepth, Approx, Conf, RandIdx) =
+				*** Verifico F2, se è vera il check è confermato 
+			if  verify(Mod, F2, sim(T, S, deadlock), Approx, Conf, MaxDepth, RandIdx) then
+				true
+				*** Altrimenti verifico F1 se non sono in deadlock, se è vera passo allo stato successivo, altrimenti false.
+			else
+				if not(deadlock) and verify(Mod, F1, sim(T, S, deadlock), Approx, Conf, MaxDepth, RandIdx + 1) then
+					simNcheck(Mod, (F1)U[Tau](F2), sim(T, S, deadlock), Step, MaxDepth, Approx, Conf, RandIdx) 
+				else
+					false
+				fi
+			fi .
+	*** Until not-bounded
+	eq checkOnRandomPath(Mod, (F1)U(F2), sim(T, S, deadlock), Step, MaxDepth, Approx, Conf, RandIdx) =
+			if verify(Mod, F2, sim(T, S, deadlock), Approx, Conf, MaxDepth, RandIdx) then
+				true
+			else
+				if not(deadlock) and verify(Mod, F1, sim(T, S, deadlock), Approx, Conf, MaxDepth, RandIdx + 1) then
+					simNcheck(Mod, (F1)U(F2), sim(T, S, deadlock), Step, MaxDepth, Approx, Conf, RandIdx) 
+				else
+					false
+				fi
+			fi .
+	*** Next (lo stato corrente non deve essere un deadlock)
+	eq checkOnRandomPath(Mod, X(F1), sim(T, S, false), Step, MaxDepth, Approx, Conf, RandIdx) =
+			simNcheck(Mod, C(F1), sim(T, S, false), Step, MaxDepth, Approx, Conf, RandIdx) .
+	*** Current (lo stato corrente può essere un deadlock)
+	eq checkOnRandomPath(Mod, C(F1), sim(T, S, deadlock), Step, MaxDepth, Approx, Conf, RandIdx) =
+			verify(Mod, F1, sim(T, S, deadlock), Approx, Conf, MaxDepth, RandIdx) .
+
+	*** Eseguo un passo di simulazione portandomi nello stato seguente e controllo la path formula
+	ceq simNcheck(Mod, PathF, sim(T, S, false), Step, MaxDepth, Approx, Conf, RandIdx) = 
+			checkOnRandomPath(Mod, PathF, sim(TF, SF, deadlock), Step + 1, MaxDepth, Approx, Conf, RandIdx + 1)
+		if	sim(TF, SF, deadlock) := simulate(Mod, sim(T, S, false), 1, 0, false, 0, 'empty.EntryList , RandIdx) .
+
+	*** Non dovrebbe mai capitare, non voglio simulare un deadlock 	
+	eq simNcheck(Mod, PathF, sim(T, S, true), Step, MaxDepth, Approx, Conf, RandIdx) = false .
+
+endm

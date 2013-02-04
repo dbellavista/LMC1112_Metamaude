@@ -1,0 +1,74 @@
+***
+*** Modello di test della Bromosulftaleina 
+***
+mod CTMC-BSF is
+
+	pr CTMC-EXTRA .
+
+	op print : EntryList -> Overview .
+
+	var N K L : Nat .
+	var VP VF : Nat .
+	var EL : EntryList .
+	var T F : Float .
+	var VL : VarList .
+	
+	
+	*** Passaggio colorante dal compartimento plasma a fegato
+	crl [model] : < v("volplasma", VP) v("volfegato", VF) v("plasma", N) v("fegato", L) > =>
+			[ 0.454 * float(N) / float(VP) ] < v("volplasma", VP) v("volfegato", VF) v("plasma", N + -1) v("fegato", L + 1) > if N > 0 /\ L < VF .
+	*** Passaggio colorante dal compartimento fegato a plasma
+	crl [model] : < v("volfegato", VF) v("volplasma", VP) v("plasma", N) v("fegato", L) > =>
+			[ 0.698 * float(L) / float(VF) ] < v("volfegato", VF) v("volplasma", VP) v("plasma", N + 1) v("fegato", L + -1) > if L > 0 /\ N < VP .
+	*** Scomparsa del colorante dal compartimento fegato
+	crl [model] : < v("volfegato", VF) v("fegato", L) VL > =>
+			[ 0.432 * float(L) / float(VF) ] < v("volfegato", VF) v("fegato", L + -1) VL > if L > 0 .
+	
+	rl [print] : [EL:EntryList] => print(EL) .
+
+	eq print(empty) = [empty] .
+	eq print(T : < v("plasma", N) v("fegato" , L)  VL > - EL) = print(EL) [print T ": "  N " " L ] .
+
+endm
+
+mod CTMC-BSF_SIMULATOR is
+	
+	pr CTMC-ENGINE .
+	pr CTMC-BSF .
+
+	*** Simulate ->	Volume del plasma
+	***				Volume del fegato
+	***				Colorante iniettato
+	***				Numero di step
+	***				Overview Size (ogni quanto si vuole l'overview)
+	***				Random Index
+	op simulate : Nat Nat Nat Nat Nat Nat -> SimulationResult .
+	op buildState : Nat Nat Nat -> State .
+
+	var VF VP QC S O R : Nat .
+
+	eq simulate(VP, VF, QC, S, O, R) = simulate('CTMC-BSF ,  upTerm(buildState(VP, VF, QC)), S, O, R) .
+
+	eq buildState(VP, VF, QC) = < v("volplasma", VP) v("volfegato", VF) v("plasma", QC) v("fegato" , 0) > .
+
+endm
+
+mod CTMC-BSF_VERIFIER is
+	pr PCTL .
+	pr CTMC-BSF_SIMULATOR .
+	
+	*** Verify -> 	Volume del plasma
+	***				Volume del fegato
+	***				Colorante iniettato
+	***				Formula da verificare
+	***				Approssimazione
+	***				Confidenza
+	***				Profondità massima
+	***				Random Index
+	op verify : Nat Nat Nat Formula Float Float Nat Nat -> Bool .
+	var A C : Float .
+	var VP VF QC R N D : Nat .
+	var F : Formula .
+	
+	eq verify(VP, VF, QC, F, A, C, D, R) = verify('CTMC-BSF , F, upTerm(buildState(VP, VF, QC)), A, C, D, R) .
+endm

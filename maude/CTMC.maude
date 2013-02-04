@@ -1,0 +1,218 @@
+***
+*** Modulo funzionale che definisce i sort e i costruttori
+*** necessari per poter definire un modello CTMC. I moduli
+*** utente devono importare questo modulo.
+***
+fmod CTMC is
+
+	pr CONVERSION .
+	pr QID .
+
+	sort State Config Rate 
+	sort Overview Entry EntryList .
+	subsort Float < Rate .
+	subsort Entry < EntryList .
+	subsort Config < State .
+	
+	op <_> : Universal -> State [ ctor poly (1) ] .
+	
+	op [_]_ : Rate State -> Config [ ctor prec 80 ] .
+	
+	op _:_ : Float State -> Entry [ ctor prec 80 ] .
+	op empty : -> EntryList [ ctor ] .
+	op _ - _ : EntryList EntryList -> EntryList [ ctor assoc id: empty prec 90 ] .
+	op [_] : EntryList -> Overview [ ctor ] .
+	
+endfm
+
+***
+*** Modulo di utilità, definisce liste di variabili da poter utilizzare come state.
+***
+fmod CTMC-EXTRA is
+	
+	pr CTMC .
+
+	sort Var VarList .
+	subsort Var < VarList .
+	
+	op null : -> VarList .
+	op __ : VarList VarList -> VarList [ ctor assoc comm id: null ] .
+	op v : String  Universal -> Var [ ctor poly (2) ] .
+
+endfm
+
+***
+*** Engine per modelli CTMC. Utilizzando il meta-livello è in grado di simulare
+*** un modello specificando i seguenti parametri:
+***		- Nome del modulo utente
+***		- Meta-Stato iniziale
+***		- Numero di step di simulazione da eseguire
+***		- Numero di step ogni quanto si vuole ricevere l'overview [opzionale]
+***		- Indice per la generazione dei numeri random da utilizzare
+***
+***	Per poter eseguire la simulazione il modulo utente DEVE implementare un
+***	sistema di rewriting rule State => [Rate] State tutte con label [model].
+*** Se si desidera gestire l'overview, occorre inserire una rule (non importa
+*** la label) Overview => Overview che deve riscrivere IN UN SOLO PASSO
+*** l'overview come l'Overview iniziale a cui si appenderanno i risultati successivi.
+*** Si può sfruttare questa riscrittura per effettuare operazioni come print sull'overview.
+*** Si ricorda che si l'utilizzo di equazioni nella riscrittura comporta la loro riduzione
+*** in un unico passo di riscrittura.
+***
+mod CTMC-ENGINE is
+
+	pr CTMC .
+	pr META-LEVEL .
+	pr RANDOM .
+	
+	*** Action -> possibile rewrite, memorizza rate e meta-stato finale
+	*** ActionList -> Lista di azioni
+	*** TotalActions -> composto dalla lista delle azioni e dalla somma dei loro rate
+	*** SimulationResult -> composto da tempo + meta-stato corrente + deadlock?
+	sort Action ActionList TotalActions SimulationResult .
+	subsort Action < ActionList .
+
+	op sim : Float Term Bool -> SimulationResult [ ctor ] .
+
+	op ac : Float Term -> Action .
+
+	op nil : -> ActionList .
+	op _ ; _ : ActionList ActionList -> ActionList [ ctor assoc id: nil prec 110 ]  .
+
+	*** Definisce un TotalAction (somma dei rate e action list)
+	op acts : Float ActionList -> TotalActions [ ctor ] .
+	
+	*** Operazioni di utilità per concatenare e aggiungere Azioni
+	*** a TotalAction
+	op _+_ : TotalActions TotalActions -> TotalActions .
+	op _#_ : TotalActions Action -> TotalActions [ prec 90 ] .
+
+	*** Dato l'indice della sequenza di numeri random, ritorna un valore casuale
+	*** compreso fra 0 e 1 estremi inclusi.
+	op rand : Nat -> Float .
+
+	*** Costruisce la TotalActions contenente tutte le azioni
+	*** possibili a partire dal dato stato iniziale. Funzione tail.
+	op applyAll : Module Term TotalActions Nat -> TotalActions .
+	
+	*** Wrapper per applyAll
+	op applyAll : Module Term -> TotalActions .
+	
+	*** Sceglie un'azione sulla base del rate
+	op pickOne : ActionList Float Float -> Action .
+	
+	*** Ricava dall'azione lo stato finale
+	op mineAction : Action -> Term .
+	
+	***
+	*** Operazione di simulazione da usare ricorsivamente.
+	*** 	Module -> meta-modulo utente
+	***		SimulationResult -> Risultato parziale della simulazione
+	*** 	Nat -> Numero di step totali
+	***		Nat -> Numero di step effettuati.
+	***		Bool -> true se l'utente è interessato all'overview.
+	***		Nat -> Dimensione target dell'overview
+	***		Term -> meta-contenuto dell'Overview
+	***		Nat -> Indice per la generazione dei numeri random
+	op simulate : Module SimulationResult Nat Nat Bool Nat Term Nat -> SimulationResult .
+	
+	***
+	*** Wrapper per la simulazione
+	*** 	Qid -> Nome del modulo utente
+	***		Term -> Meta-Stato iniziale
+	***		Nat -> Numero di passi di simulazione desiderati
+	***		Nat -> Ogni quanti passi ricevere l'overview (0 se non si vuole gestire l'Overview)
+	***		Nat -> Indice per la generazione dei numeri random da cui iniziare.
+	op simulate : Qid Term Nat Nat Nat -> SimulationResult .
+
+	***
+	*** Controlla se occorre riscrivere l'overview nel modulo utente.
+	*** Ritorna la meta-EntryList a cui appendere i risultati successivi. 
+	***		Module -> meta-modulo utente .
+	***		Term -> meta-EntryList .
+	***		Nat -> step di simulazione corrente.
+	***		Nat -> Overview size
+	op checkOverview : Module Term Nat Nat -> Term .
+	
+	var Mod : Module .
+	var SimRes : SimulationResult .
+	var A : Action .
+	var S S1 S2 S3 SS StateI StateF : Term .
+	var AL AL1 AL2 : ActionList .
+	var TotAc : TotalActions .
+	var C C1 C2 : Config .
+	var N ResIdx RandIdx Step OvSize MaxStep : Nat .
+	var R R1 R2 SumR Rtarget TimeI TimeF Tau1 Tau2 : Float .
+	var result? : [Result4Tuple] .
+	var ELI ELF RT : Term .
+	var memOv deadlock : Bool .
+	
+	eq acts(R1, AL1) + acts(R2, AL2) = acts(R1 + R2, (AL1 ; AL2)) .
+	eq acts(R1, AL1) # ac(R2, S) = acts(R1 + R2, (AL1 ; ac(R2, S))) .
+	
+	*** Entry point
+	eq simulate(ModName:Qid, StateI, Step, OvSize, RandIdx) =
+		if OvSize > 0 then
+			simulate(upModule(ModName:Qid, false), sim(0.0, StateI, false), Step, 0, true, OvSize, '_:_[upTerm(0.0), StateI], RandIdx) 
+		else
+			simulate(upModule(ModName:Qid, false), sim(0.0, StateI, false), Step, 0, false, OvSize, 'empty.EntryList , RandIdx) 
+		fi  .
+	
+	*** Simulazione terminata
+	eq simulate(Mod, SimRes, MaxStep, MaxStep,  memOv, OvSize, ELI, RandIdx) = SimRes .
+
+	*** Simulazione ricorsiva
+	ceq simulate(Mod, sim(TimeI, StateI, false), MaxStep, Step, memOv, OvSize, ELI , RandIdx) =
+			simulate(Mod, sim(TimeF, StateF, false), MaxStep, Step + 1, memOv, OvSize, ELF, RandIdx + 2)
+		if 	acts(SumR, AL) := applyAll(Mod, StateI) /\ SumR > 0.0 /\ Tau1 := rand(RandIdx) /\
+			Tau2 := rand(RandIdx + 1) /\ A := pickOne(AL, SumR * Tau1, 0.0) /\
+			StateF := mineAction(A) /\ TimeF := TimeI + log(1.0 / Tau2) / SumR /\ 
+			ELF := ( if memOv then checkOverview(Mod, '_-_[ELI , '_:_[upTerm(TimeF), StateF]], Step + 1, OvSize)
+								else 'empty.EntryList fi) .
+
+	*** Deadlock
+	eq simulate(Mod, sim(TimeI, StateI, deadlock), MaxStep, Step, memOv, OvSize, ELI, RandIdx)
+			= sim(TimeI , StateI, true) [ owise ] .
+
+	*** Effettuo la rewrite dell'overview
+	ceq checkOverview(Mod, ELI, Step, OvSize) = ELF
+			if (Step rem OvSize) == 0 /\ 
+				'`[_`][ ELF ] := getTerm(metaRewrite(Mod, '`[_`][ELI], 1)) .
+
+	eq checkOverview(Mod, ELI, Step, OvSize) = ELI [ owise ] .
+
+	*** Ritorno lo stato finale
+	eq mineAction(ac(R, S)) = S .
+
+	*** Prendo una azione basandomi sul rate
+	ceq pickOne((ac(R, S) ; AL), Rtarget, SumR) = if R1 >= Rtarget then ac(R, S) 
+														else pickOne(AL, Rtarget, R1)
+														fi
+													if R1 := SumR + R .
+	
+	*** Entry-point della applyAll
+	eq applyAll(Mod, S) = applyAll(Mod, S, acts(0.0, nil), 0) .
+
+	*** meta-applico ricorsivamente la rule "model" incrementando
+	*** il numero di soluzioni da scartare: così ottenengo tutte
+	*** le soluzioni possibili. 
+	*** Il risultato della metaXApply è composto da 4 termini.
+	*** Due non sono utilizzati, gli altri due sono:
+	***	   * Term -> meta-Config risultato dall'applicazione della rule
+	***	   * Context -> lista dei termini non riscritti. Deve essere vuota ( '[]' )
+	***
+	ceq applyAll(Mod, S, acts(SumR, AL), ResIdx) = 
+			applyAll(Mod, S, acts(SumR, AL) # ac(R2, S2), ResIdx + 1)
+			if	result? := metaXapply(Mod, S, 'model , none, 0, unbounded, ResIdx) /\ result? :: Result4Tuple /\
+				getContext(result?) == [] /\ '`[_`]_[RT, S2] := getTerm(result?) /\ R2 := downTerm(RT, 0.0) .
+
+	*** Nessuna rewrite disponibile
+	eq applyAll(Mod, S, TotAc, ResIdx) = TotAc [ owise ] .
+	
+	*** Rand restituisce un numero casuale da 0 a 4294967295.
+	*** rand utilizza l'algoritmo di Mersenne Twister Random Number Generator
+	*** Un seed inizializzato all'avvio di maude genera una sequenza di numeri
+	*** casuali.
+	eq rand(RandIdx) = float(random(RandIdx) / 4294967295) .
+
+endm
