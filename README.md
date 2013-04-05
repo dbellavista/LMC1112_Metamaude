@@ -1,5 +1,4 @@
-# LMC1112 - Metamaude: tool for CTMC simulation and verification using Maude and
-# Approximate Probabilistic Model Checking
+# LMC1112 - Metamaude: tool for CTMC simulation and verification using Maude and Approximate Probabilistic Model Checking
 
 Project developed for Languages and Computational Models course (2011-2012), by
 Daniele Bellavista. Metamaude is a tool, written in *maude*, for
